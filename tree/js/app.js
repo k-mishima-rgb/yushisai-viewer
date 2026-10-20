@@ -110,12 +110,62 @@
     { x: 67.82, y: 67.66 }
   ];
   var REFERENCE_POINT = { x: 50, y: 32 };
+  var TRUNK_POLYGON = [
+    { x: 47, y: 44 },
+    { x: 53.5, y: 44 },
+    { x: 55, y: 52 },
+    { x: 56.5, y: 60 },
+    { x: 56.5, y: 70 },
+    { x: 58, y: 77 },
+    { x: 61, y: 82 },
+    { x: 63, y: 87 },
+    { x: 39, y: 87 },
+    { x: 42, y: 82 },
+    { x: 45, y: 77 },
+    { x: 45.8, y: 70 },
+    { x: 46, y: 60 },
+    { x: 46, y: 52 }
+  ];
+  function isOnTrunk({ x, y }) {
+    let inside = false;
+    for (let i = 0, j = TRUNK_POLYGON.length - 1; i < TRUNK_POLYGON.length; j = i, i += 1) {
+      const a = TRUNK_POLYGON[i];
+      const b = TRUNK_POLYGON[j];
+      if (a.y > y !== b.y > y && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
   function getAllAnchors() {
     return CANOPY_POINTS.map((point, index) => ({ ...point, index }));
   }
 
+  // js/leafScale.js
+  var NATIVE_FRAME_WIDTH = 1672;
+  var NATIVE_FRAME_HEIGHT = 940;
+  var BASE_STICKY_WIDTH_PX = 40;
+  function computeFrameScale(frameWidthPx, nativeFrameWidth = NATIVE_FRAME_WIDTH) {
+    if (!Number.isFinite(frameWidthPx) || frameWidthPx <= 0) {
+      return 1;
+    }
+    return frameWidthPx / nativeFrameWidth;
+  }
+  var LEAF_SIZE_BOOST = 1.1;
+  var FULL_SIZE_MAX_COUNT = 400;
+  var MIN_COUNT_SCALE = 0.6;
+  function computeCountScale(count) {
+    if (!(count > FULL_SIZE_MAX_COUNT)) {
+      return LEAF_SIZE_BOOST;
+    }
+    return LEAF_SIZE_BOOST * Math.max(MIN_COUNT_SCALE, Math.sqrt(FULL_SIZE_MAX_COUNT / count));
+  }
+  var DENSE_MIN_COUNT = 300;
+  function isDenseCount(count) {
+    return count > DENSE_MIN_COUNT;
+  }
+
   // js/anchorPlacement.js
-  var GOLDEN_ANGLE_DEG = 137.508;
   function distance(a, b) {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
@@ -130,13 +180,17 @@
     const occupantIndex = Math.floor(orderIndex / anchorCount);
     return { anchorIndex: sortedAnchorIndices[slot], occupantIndex };
   }
-  function computeStickyOffset(occupantIndex, baseRadiusPercent = 3.2) {
+  var SCATTER_RADIUS_PX = 75;
+  function computeStickyOffset(occupantIndex, { u, v }) {
     if (occupantIndex === 0) {
       return { dx: 0, dy: 0 };
     }
-    const angle = occupantIndex * GOLDEN_ANGLE_DEG * Math.PI / 180;
-    const radius = baseRadiusPercent * Math.sqrt(occupantIndex);
-    return { dx: radius * Math.cos(angle), dy: radius * Math.sin(angle) };
+    const radiusPx = SCATTER_RADIUS_PX * Math.sqrt(u);
+    const angle = 2 * Math.PI * v;
+    return {
+      dx: radiusPx * Math.cos(angle) / NATIVE_FRAME_WIDTH * 100,
+      dy: radiusPx * Math.sin(angle) / NATIVE_FRAME_HEIGHT * 100
+    };
   }
 
   // js/stageConfig.js
@@ -156,17 +210,6 @@
       }
     }
     return current;
-  }
-
-  // js/leafScale.js
-  var NATIVE_FRAME_WIDTH = 1672;
-  var NATIVE_FRAME_HEIGHT = 940;
-  var BASE_STICKY_WIDTH_PX = 40;
-  function computeFrameScale(frameWidthPx, nativeFrameWidth = NATIVE_FRAME_WIDTH) {
-    if (!Number.isFinite(frameWidthPx) || frameWidthPx <= 0) {
-      return 1;
-    }
-    return frameWidthPx / nativeFrameWidth;
   }
 
   // js/stickyVisuals.js
@@ -315,6 +358,10 @@
     }
     return -LEAF_ROTATION_NATURAL_MAX_DEG + roll * (2 * LEAF_ROTATION_NATURAL_MAX_DEG);
   }
+  function getStickyScatter(id, attempt = 0) {
+    const suffix = attempt === 0 ? "" : `#${attempt}`;
+    return { u: hashToFraction(`scatter-radius:${id}${suffix}`), v: hashToFraction(`scatter-angle:${id}${suffix}`) };
+  }
   function getStickyJitter(id) {
     const angle = hashToFraction(`jitter-angle:${id}`) * 2 * Math.PI;
     const radius = LEAF_JITTER_MIN_PX + hashToFraction(`jitter-radius:${id}`) * (LEAF_JITTER_MAX_PX - LEAF_JITTER_MIN_PX);
@@ -380,8 +427,25 @@
   }
 
   // js/messageStore.js
+  var MAX_SCATTER_ATTEMPTS = 8;
   function jitterToPercent({ dxPx, dyPx }) {
     return { dx: dxPx / NATIVE_FRAME_WIDTH * 100, dy: dyPx / NATIVE_FRAME_HEIGHT * 100 };
+  }
+  function resolvePlacement(raw, anchorPoint, offset) {
+    const settledAnchor = { x: anchorPoint.x + offset.dx, y: anchorPoint.y + offset.dy };
+    const visual = resolveStickyVisual(raw.id, settledAnchor, raw.center);
+    return { settledAnchor, jitter: jitterToPercent(visual.jitter), visual };
+  }
+  function placeOffTrunk(raw, anchorPoint, occupantIndex) {
+    for (let attempt = 0; attempt < MAX_SCATTER_ATTEMPTS; attempt += 1) {
+      const placement2 = resolvePlacement(raw, anchorPoint, computeStickyOffset(occupantIndex, getStickyScatter(raw.id, attempt)));
+      const { settledAnchor, jitter } = placement2;
+      if (!isOnTrunk({ x: settledAnchor.x + jitter.dx, y: settledAnchor.y + jitter.dy })) {
+        return placement2;
+      }
+    }
+    const placement = resolvePlacement(raw, anchorPoint, { dx: 0, dy: 0 });
+    return { ...placement, jitter: { dx: 0, dy: 0 } };
   }
   function createMessageStore() {
     const anchors = getAllAnchors();
@@ -406,11 +470,7 @@
       }
       const orderIndex = messages.length;
       const { anchorIndex, occupantIndex } = computeAnchorAssignment(orderIndex, sortedAnchorIndices);
-      const anchorPoint = anchors[anchorIndex];
-      const offset = computeStickyOffset(occupantIndex);
-      const settledAnchor = { x: anchorPoint.x + offset.dx, y: anchorPoint.y + offset.dy };
-      const visual = resolveStickyVisual(raw.id, settledAnchor, raw.center);
-      const jitter = jitterToPercent(visual.jitter);
+      const { settledAnchor, jitter, visual } = placeOffTrunk(raw, anchors[anchorIndex], occupantIndex);
       const record = {
         id: raw.id,
         center: raw.center,
@@ -845,6 +905,57 @@
     return { from: lastBucket.id, to: lastBucket.id, progress: 0 };
   }
 
+  // js/tenjiMode.js
+  var RELOAD_AFTER_MS = 24 * 60 * 60 * 1e3;
+  var ONLINE_FRESH_MS = 2 * 60 * 1e3;
+  var RELOAD_CHECK_INTERVAL_MS = 10 * 60 * 1e3;
+  function isTenjiMode(search) {
+    return new URLSearchParams(search).get("tenji") === "1";
+  }
+  function shouldReload({ startedAtMs, nowMs, lastOnlineAtMs }) {
+    if (nowMs - startedAtMs < RELOAD_AFTER_MS) {
+      return false;
+    }
+    return lastOnlineAtMs !== null && nowMs - lastOnlineAtMs <= ONLINE_FRESH_MS;
+  }
+  var WAKE_LOCK_RETRY_MS = 5 * 60 * 1e3;
+  async function keepScreenAwake({ wakeLock, doc, setIntervalFn = setInterval }) {
+    if (!wakeLock) {
+      return;
+    }
+    let held = false;
+    let pending = false;
+    async function acquire() {
+      if (held || pending || doc.visibilityState !== "visible") {
+        return;
+      }
+      pending = true;
+      try {
+        const sentinel = await wakeLock.request("screen");
+        held = true;
+        sentinel.addEventListener("release", () => {
+          held = false;
+          return acquire();
+        });
+      } catch (error) {
+        console.warn("[tenji] wake lock refused:", error?.message ?? error);
+      } finally {
+        pending = false;
+      }
+    }
+    doc.addEventListener("visibilitychange", acquire);
+    setIntervalFn(acquire, WAKE_LOCK_RETRY_MS);
+    await acquire();
+  }
+  function startDailyReload({ getLastOnlineAtMs, reload, now = Date.now }) {
+    const startedAtMs = now();
+    return setInterval(() => {
+      if (shouldReload({ startedAtMs, nowMs: now(), lastOnlineAtMs: getLastOnlineAtMs() })) {
+        reload();
+      }
+    }, RELOAD_CHECK_INTERVAL_MS);
+  }
+
   // js/main.js
   var SHEET_URL_STORAGE_KEY = "yushisai-message-tree:sheetUrl";
   var DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1o_dQU4QDgNj2KL04wXAheoOi30sv9A3XcAA9WJiXFkw/edit?gid=735394104#gid=735394104";
@@ -989,8 +1100,16 @@
       }, CARD_HOLD_MS);
     }
     messageStore.onMessageAdded((record) => spawnCard(record));
-    messageStore.onChange((stats) => applyStage(stats.stage.id));
+    function applyDensity(count) {
+      document.documentElement.style.setProperty("--leaf-count-scale", String(computeCountScale(count)));
+      app.dataset.dense = String(isDenseCount(count));
+    }
+    messageStore.onChange((stats) => {
+      applyStage(stats.stage.id);
+      applyDensity(stats.count);
+    });
     applyStage(messageStore.getStats().stage.id);
+    applyDensity(messageStore.getStats().count);
     const idleReplay = createIdleReplay({
       getMessages: () => realMessages,
       getCurrentCount: () => messageStore.getStats().count,
@@ -1052,6 +1171,7 @@
       messageTicker.reset();
     }
     let statusEl = null;
+    let lastOnlineAtMs = null;
     const isViewer = document.body.dataset.viewer === "1";
     const getSheetUrl = () => isViewer ? DEFAULT_SHEET_URL : localStorage.getItem(SHEET_URL_STORAGE_KEY) ?? DEFAULT_SHEET_URL;
     const poller = createCsvPoller({
@@ -1063,6 +1183,9 @@
         }
       },
       onStatusChange: (status) => {
+        if (status.online) {
+          lastOnlineAtMs = Date.now();
+        }
         if (statusEl) {
           statusEl.dataset.online = String(status.online);
           statusEl.textContent = status.online ? "\u30AA\u30F3\u30E9\u30A4\u30F3" : "\u30AA\u30D5\u30E9\u30A4\u30F3(\u518D\u8A66\u884C\u4E2D)";
@@ -1070,6 +1193,12 @@
       }
     });
     poller.start();
+    if (isViewer && isTenjiMode(window.location.search)) {
+      document.body.dataset.tenji = "1";
+      document.querySelector(".tenji-panel").hidden = false;
+      keepScreenAwake({ wakeLock: navigator.wakeLock, doc: document });
+      startDailyReload({ getLastOnlineAtMs: () => lastOnlineAtMs, reload: () => window.location.reload() });
+    }
     if (isViewer) return;
     statusEl = document.querySelector(".sheet-status");
     const urlInput = document.querySelector(".sheet-url-input");

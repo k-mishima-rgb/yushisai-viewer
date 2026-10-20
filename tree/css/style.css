@@ -201,13 +201,16 @@ body {
  *    BASE_STICKY_WIDTH_PX from js/stickyVisuals.js), giving each leaf its
  *    own measured size within the depth-based range (js/stickyVisuals.js
  *    DEPTH_WIDTH_RANGES).
+ *  - --leaf-count-scale: global, shrinks every leaf together once the tree
+ *    holds more messages than fit at full size (js/leafScale.js
+ *    computeCountScale, set in js/main.js applyDensity).
  * Leaves use a 40x38 box (the maple silhouette below is close to square);
  * flowers use a 40x40 box.
  */
 .sticky {
   position: absolute;
   transform: translate(-50%, -50%) rotate(var(--leaf-rotation, 0deg))
-    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1)));
+    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1) * var(--leaf-count-scale, 1)));
   border: none;
   cursor: pointer;
   display: flex;
@@ -260,6 +263,20 @@ body {
   animation-delay: var(--sway-delay, 0s);
 }
 
+/*
+ * Hundreds of small leaves (js/leafScale.js isDenseCount): per-leaf sway,
+ * glow and filters cost far more than they show at that size, so drop them
+ * to keep a long-running exhibit display smooth.
+ */
+.app[data-dense="true"] .sticky {
+  filter: none;
+}
+
+.app[data-dense="true"] .sticky-visual {
+  animation: none;
+  box-shadow: none;
+}
+
 /* Non-symmetric so the sway reads as wind rather than a metronome. */
 @keyframes leaf-sway {
   0%,
@@ -289,7 +306,7 @@ body {
 .sticky:hover,
 .sticky:focus-visible {
   transform: translate(-50%, -50%) rotate(var(--leaf-rotation, 0deg))
-    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1) * 1.2));
+    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1) * var(--leaf-count-scale, 1) * 1.2));
   z-index: 5;
 }
 
@@ -398,7 +415,7 @@ body {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   transform: translate(-50%, -50%) rotate(var(--leaf-rotation, 0deg))
-    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1)));
+    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1) * var(--leaf-count-scale, 1)));
   background: linear-gradient(135deg, var(--leaf-color, var(--foliage-green)) 60%, var(--horizon-gold) 140%);
   filter: saturate(var(--sticky-saturate, 1)) brightness(var(--sunlit-brightness, 1))
     drop-shadow(0 0 var(--sunlit-glow, 0px) rgba(255, 210, 100, 0.75));
@@ -667,4 +684,84 @@ body {
 .dev-count-apply:hover,
 .dev-count-reset:hover {
   filter: brightness(1.08);
+}
+
+/*
+ * Student viewer only (scripts/viewerHtml.mjs): the 16:9 artwork is a thin
+ * band on a portrait phone, so suggest turning it sideways in the empty
+ * space below the tree.
+ */
+.rotate-hint {
+  display: none;
+}
+
+@media (orientation: portrait) {
+  .rotate-hint {
+    display: block;
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 14vh;
+    z-index: 40;
+    margin: 0 auto;
+    max-width: 22em;
+    padding: 0.7em 1em;
+    border-radius: 999px;
+    background: rgba(20, 10, 5, 0.72);
+    color: var(--cream);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+    pointer-events: none;
+  }
+}
+
+/*
+ * Exhibit QR panel (student viewer + ?tenji=1 only, js/tenjiMode.js): links
+ * to the posting form from the grass at the bottom-left, clear of the tree.
+ * Opaque white behind the QR keeps its quiet zone readable from a distance.
+ */
+.tenji-panel {
+  position: fixed;
+  left: 32px;
+  bottom: 32px;
+  z-index: 50;
+  width: 260px;
+  box-sizing: border-box;
+  padding: 16px 16px 14px;
+  border-radius: 18px;
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: 0 6px 24px rgba(20, 10, 5, 0.35);
+  text-align: center;
+  font-family: var(--font-ui);
+}
+
+.tenji-panel[hidden] {
+  display: none;
+}
+
+.tenji-panel-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.tenji-panel img {
+  display: block;
+  width: 228px;
+  height: 228px;
+  margin: 0 auto;
+  background: #fff;
+}
+
+.tenji-panel-caption {
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+body[data-tenji="1"] .rotate-hint {
+  display: none;
 }
