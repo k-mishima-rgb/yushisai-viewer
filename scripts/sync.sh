@@ -16,4 +16,11 @@ fi
 
 rsync -a --delete "$DOLPHIN/" "$ROOT/dolphin/"
 rsync -a --delete "$TREE/" "$ROOT/tree/"
-echo "取り込みました: dolphin/ と tree/"
+
+# 検索エンジンに載せない（GitHub Pages のプロジェクトサイトは robots.txt を置けないので各ページに meta を入れる）
+NOINDEX='<meta name="robots" content="noindex,nofollow">'
+for page in "$ROOT/index.html" "$ROOT/dolphin/index.html" "$ROOT/tree/index.html"; do
+  grep -q 'name="robots"' "$page" || perl -0pi -e "s{(<meta charset=[^>]*>)}{\$1\n  $NOINDEX}i" "$page"
+  grep -q 'name="robots" content="noindex' "$page" || { echo "noindex を入れられませんでした: $page" >&2; exit 1; }
+done
+echo "取り込みました: dolphin/ と tree/（noindex 済み）"
