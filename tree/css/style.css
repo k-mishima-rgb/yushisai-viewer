@@ -1,0 +1,670 @@
+/* Palette sampled from assets/stage-*.png (sky, horizon, bark, foliage). */
+:root {
+  --sky-deep: #241648;
+  --sky-violet: #4a2f78;
+  --horizon-gold: #f0a83a;
+  --sun-glow: #ffe27a;
+  --bark-brown: #3a2a22;
+  --foliage-green: #5f7a2e;
+  --blossom-pink: #e7b6c4;
+  --cream: #fdf6e8;
+  --ink: #3a2a1f;
+  --amber-glass: rgba(255, 205, 130, 0.22);
+  --amber-border: rgba(255, 214, 140, 0.65);
+  --glow-warm: rgba(255, 214, 140, 0.55);
+
+  --font-ui: "Zen Kaku Gothic New", system-ui, sans-serif;
+  --font-message: "Shippori Mincho", serif;
+
+  --duration-stage: 0.8s;
+  --duration-settle: 1.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-stage: 0.01s;
+    --duration-settle: 0.01s;
+  }
+
+  .sticky-visual[data-sway="true"] {
+    animation: none;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font-ui);
+  color: var(--ink);
+}
+
+.app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--sky-deep) 0%, var(--sky-violet) 45%, var(--horizon-gold) 100%);
+  transition: background var(--duration-stage) ease;
+}
+
+/*
+ * Stage-driven ambient effects (message-count milestones from js/stageConfig.js,
+ * applied via js/main.js `applyStage`). The background art itself never
+ * changes; only the sky warmth and sticky vividness intensify as the tree
+ * fills in. This is a deliberate design progression, not measured from the
+ * reference art (the 6 stage-*.png share nearly the same sky).
+ */
+.app[data-stage="1"] {
+  --sky-deep: #241648;
+  --sky-violet: #4a2f78;
+  --horizon-gold: #f0a83a;
+  --sticky-saturate: 1;
+  --sticky-glow-blur: 14px;
+  --sticky-glow-spread: 4px;
+}
+
+.app[data-stage="2"] {
+  --sky-deep: #28184c;
+  --sky-violet: #543278;
+  --horizon-gold: #f3ae42;
+  --sticky-saturate: 1.07;
+  --sticky-glow-blur: 15.2px;
+  --sticky-glow-spread: 4.6px;
+}
+
+.app[data-stage="3"] {
+  --sky-deep: #2d1a50;
+  --sky-violet: #5d3579;
+  --horizon-gold: #f6b54a;
+  --sticky-saturate: 1.14;
+  --sticky-glow-blur: 16.4px;
+  --sticky-glow-spread: 5.2px;
+}
+
+.app[data-stage="4"] {
+  --sky-deep: #311b54;
+  --sky-violet: #673979;
+  --horizon-gold: #f9bb51;
+  --sticky-saturate: 1.21;
+  --sticky-glow-blur: 17.6px;
+  --sticky-glow-spread: 5.8px;
+}
+
+.app[data-stage="5"] {
+  --sky-deep: #361d58;
+  --sky-violet: #703c7a;
+  --horizon-gold: #fcc259;
+  --sticky-saturate: 1.28;
+  --sticky-glow-blur: 18.8px;
+  --sticky-glow-spread: 6.4px;
+}
+
+.app[data-stage="6"] {
+  --sky-deep: #3a1f5c;
+  --sky-violet: #7a3f7a;
+  --horizon-gold: #ffc861;
+  --sticky-saturate: 1.35;
+  --sticky-glow-blur: 20px;
+  --sticky-glow-spread: 7px;
+}
+
+/* Brief flash the instant a stage threshold is crossed. */
+.stage-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 30%, var(--glow-warm), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  z-index: 30;
+}
+
+.stage-flash.active {
+  opacity: 1;
+  transition: opacity 0.25s ease-out;
+}
+
+.tree-stage-wrap {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* Fills the letterbox margins around .tree-frame with a soft blurred echo
+   of the same artwork, so a landscape tablet doesn't show bare gradient. */
+.tree-backdrop {
+  position: absolute;
+  inset: 0;
+}
+
+.backdrop-layer {
+  transform: scale(1.15);
+  filter: blur(48px) brightness(0.65) saturate(1.15);
+}
+
+/*
+ * Locked to the artwork's native 1672:940 ratio so branch_anchors.json's
+ * percentage coordinates always land on the same spot in the painting,
+ * whether the viewport is a landscape tablet or a portrait phone.
+ */
+.tree-frame {
+  position: relative;
+  aspect-ratio: 1672 / 940;
+  width: min(100%, calc(100vh * 1672 / 940));
+  max-height: 100%;
+  box-shadow: 0 0 80px 20px rgba(0, 0, 0, 0.35);
+}
+
+.tree-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/*
+ * Four stacked copies of the tree art (morning/midday/afternoon/evening),
+ * one per js/timeOfDay.js TIME_BUCKETS id. js/main.js sets each layer's
+ * opacity directly (a continuous 0-1 blend, not just an on/off toggle), so
+ * this transition only smooths the jump between periodic updates.
+ */
+.time-layer {
+  opacity: 0;
+  transition: opacity var(--duration-time, 1.2s) linear;
+}
+
+.time-layer[data-time-layer="morning"] {
+  opacity: 1;
+}
+
+.sticky-layer {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * Each sticky is authored in a local coordinate space 40px wide (matching
+ * the clip-path shapes below), then scaled as a whole via `transform:
+ * scale()` so the clip-path stays correctly proportioned at any final size:
+ *  - --frame-scale: global, recomputed on resize (js/leafScale.js) so the
+ *    leaf stays the same physical size relative to the artwork at any
+ *    viewport width.
+ *  - --leaf-unit-scale: per-message, fixed at creation (record.leafWidth /
+ *    BASE_STICKY_WIDTH_PX from js/stickyVisuals.js), giving each leaf its
+ *    own measured size within the depth-based range (js/stickyVisuals.js
+ *    DEPTH_WIDTH_RANGES).
+ * Leaves use a 40x38 box (the maple silhouette below is close to square);
+ * flowers use a 40x40 box.
+ */
+.sticky {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(var(--leaf-rotation, 0deg))
+    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1)));
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  filter: saturate(var(--sticky-saturate, 1)) brightness(var(--sunlit-brightness, 1))
+    drop-shadow(0 0 var(--sunlit-glow, 0px) rgba(255, 210, 100, 0.75));
+  transition: filter var(--duration-stage) ease;
+}
+
+.sticky[data-kind="leaf"] {
+  width: 40px;
+  height: 38px;
+}
+
+.sticky[data-kind="flower"] {
+  width: 40px;
+  height: 40px;
+}
+
+/*
+ * Holds the silhouette/color/opacity/sway that used to live directly on
+ * `.sticky`. Split out (GPT-5.5, 2026-09-08) so the wind-sway `rotate`
+ * animation below has its own element to animate, independent of
+ * `.sticky`'s own transform (position + base rotation + scale). Only
+ * created once a card finalizes into a sticky (js/main.js finalizeSticky) --
+ * the card/settling phase never had a clip-path either, so this isn't a
+ * behavior change there.
+ *
+ * box-shadow also lives here rather than on `.sticky`: box-shadow is clipped
+ * to an element's own clip-path, so keeping it on the un-clipped `.sticky`
+ * made the glow render as a plain rectangle behind the leaf instead of
+ * following its silhouette.
+ */
+.sticky-visual {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: linear-gradient(135deg, var(--leaf-color, var(--foliage-green)) 60%, var(--horizon-gold) 140%);
+  opacity: var(--sticky-opacity, 1);
+  box-shadow: 0 0 var(--sticky-glow-blur, 14px) var(--sticky-glow-spread, 4px) var(--glow-warm),
+    0 3px 8px rgba(30, 15, 5, 0.35);
+  transition: box-shadow var(--duration-stage) ease;
+}
+
+.sticky-visual[data-sway="true"] {
+  transform-origin: 50% 50%;
+  animation: leaf-sway var(--sway-period, 9s) ease-in-out infinite;
+  animation-delay: var(--sway-delay, 0s);
+}
+
+/* Non-symmetric so the sway reads as wind rather than a metronome. */
+@keyframes leaf-sway {
+  0%,
+  100% {
+    transform: rotate(calc(var(--sway-angle, 1deg) * -0.35));
+  }
+  32% {
+    transform: rotate(var(--sway-angle, 1deg));
+  }
+  68% {
+    transform: rotate(calc(var(--sway-angle, 1deg) * -0.7));
+  }
+}
+
+/*
+ * Center color (--leaf-color) is never altered by lighting (GPT-5.5's
+ * 2026-09-08 review: hue-blending toward gold eroded the very distinctness
+ * the venue palette exists for). The sunset catches a leaf as a brightness
+ * lift + warm glow layered on top of its own color instead.
+ */
+.sticky[data-sunlit="true"],
+.card.settling[data-sunlit="true"] {
+  --sunlit-brightness: 1.15;
+  --sunlit-glow: 5px;
+}
+
+.sticky:hover,
+.sticky:focus-visible {
+  transform: translate(-50%, -50%) rotate(var(--leaf-rotation, 0deg))
+    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1) * 1.2));
+  z-index: 5;
+}
+
+.sticky:hover .sticky-visual,
+.sticky:focus-visible .sticky-visual {
+  box-shadow: 0 0 calc(var(--sticky-glow-blur, 14px) * 1.4) calc(var(--sticky-glow-spread, 4px) * 1.4) var(--glow-warm),
+    0 4px 10px rgba(30, 15, 5, 0.4);
+}
+
+/*
+ * Japanese maple (イロハモミジ) silhouette, replacing the previous 3
+ * unlobed entire-margin shapes (Mishima spec 2026-09-08) with a 7-lobed,
+ * serrated-margin outline (Mishima request 2026-09-09, matched to a
+ * supplied reference photo). Traced directly from that reference image
+ * (contour-extracted, simplified to 40 vertices) rather than hand-drawn, so
+ * the lobes/sinuses/stem curl are the real photo's, not an approximation.
+ * All 3 variant slots share this one outline (still chosen per-message via
+ * js/stickyVisuals.js getStickyVariant, so the selector/variety machinery
+ * is untouched) -- color/size/rotation/depth already carry the per-leaf
+ * variety, and the reference was specific enough that inventing 3 different
+ * silhouettes risked drifting from it. Drawn in the 40x38 box above
+ * (previously 40x20 -- a 7-lobed palmate leaf needs a roughly square box,
+ * not a flattened wide one), stem-to-tip running top-to-bottom.
+ */
+.sticky-visual[data-variant="oval-a"],
+.sticky-visual[data-variant="oval-b"],
+.sticky-visual[data-variant="heart"] {
+  clip-path: path(
+    "M 15.61 0.79 L 17.99 3.17 L 20.37 6.61 L 23.32 14.49 L 26.44 9.07 L 30.70 3.99 L 31.61 10.88 L 29.97 19.00 L 34.81 16.38 L 39.40 14.82 L 36.36 21.21 L 32.02 25.64 L 38.01 26.22 L 37.19 27.12 L 34.81 28.84 L 31.20 30.24 L 28.65 30.65 L 23.40 30.40 L 25.29 34.34 L 26.85 35.73 L 29.39 36.64 L 29.31 37.21 L 26.69 36.31 L 24.80 34.67 L 22.67 30.40 L 18.81 32.86 L 14.96 34.18 L 10.85 34.42 L 7.41 33.60 L 12.58 30.32 L 5.60 27.94 L 0.60 23.84 L 5.36 23.18 L 10.77 23.27 L 6.10 17.44 L 4.37 13.67 L 3.55 10.39 L 9.13 12.77 L 14.87 16.54 L 14.55 8.66 L 15.61 0.79 Z"
+  );
+}
+
+/* Only the 3 leaf variants have a midrib -- "flower" never matches these selectors. */
+.sticky-visual[data-variant="oval-a"]::after,
+.sticky-visual[data-variant="oval-b"]::after,
+.sticky-visual[data-variant="heart"]::after {
+  content: "";
+  position: absolute;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Stem-to-tip runs top-to-bottom now, so the midrib is vertical. */
+.sticky-visual[data-variant="oval-a"]::after,
+.sticky-visual[data-variant="oval-b"]::after,
+.sticky-visual[data-variant="heart"]::after {
+  left: 50%;
+  top: 3px;
+  bottom: 6px;
+  width: 1px;
+}
+
+.sticky-visual[data-variant="flower"] {
+  clip-path: path(
+    "M20 4 C24 4 26 8 24 12 C28 8 32 10 32 14 C32 18 28 20 24 18 C26 22 24 26 20 26 C16 26 14 22 16 18 C12 20 8 18 8 14 C8 10 12 8 16 12 C14 8 16 4 20 4 Z"
+  );
+}
+
+.card-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.card {
+  position: absolute;
+  left: 50%;
+  top: 32%;
+  transform: translate(-50%, -50%);
+  width: 170px;
+  padding: 14px;
+  border-radius: 12px;
+  font-family: var(--font-message);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: linear-gradient(160deg, rgba(255, 246, 224, 0.94), rgba(255, 220, 170, 0.8));
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  border: 1px solid var(--amber-border);
+  box-shadow: 0 8px 24px rgba(20, 8, 30, 0.4), 0 0 30px var(--glow-warm);
+  transition: left var(--duration-settle) ease, top var(--duration-settle) ease, width var(--duration-settle) ease,
+    height var(--duration-settle) ease, padding var(--duration-settle) ease,
+    border var(--duration-settle) ease, border-radius var(--duration-settle) ease,
+    font-size var(--duration-settle) ease, background var(--duration-settle) ease,
+    box-shadow var(--duration-settle) ease, transform var(--duration-settle) ease,
+    backdrop-filter var(--duration-settle) ease, filter var(--duration-settle) ease;
+}
+
+/*
+ * Settles toward the exact same width/height/transform formula `.sticky`
+ * uses (js/leafScale.js's --frame-scale * --leaf-unit-scale), using the
+ * --leaf-color/--leaf-rotation set at spawn time (js/main.js spawnCard()).
+ * By the time this transition ends, position/color/rotation/scale/shadow/
+ * filter already match the sticky it becomes -- only the silhouette is left
+ * to swap (organic blob -> precise clip-path), done instantly in
+ * finalizeSticky() so it reads as a detail refinement rather than a jarring
+ * swap.
+ */
+.card.settling {
+  width: 40px;
+  height: 38px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  font-size: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transform: translate(-50%, -50%) rotate(var(--leaf-rotation, 0deg))
+    scale(calc(var(--frame-scale, 1) * var(--leaf-unit-scale, 1)));
+  background: linear-gradient(135deg, var(--leaf-color, var(--foliage-green)) 60%, var(--horizon-gold) 140%);
+  filter: saturate(var(--sticky-saturate, 1)) brightness(var(--sunlit-brightness, 1))
+    drop-shadow(0 0 var(--sunlit-glow, 0px) rgba(255, 210, 100, 0.75));
+  box-shadow: 0 0 var(--sticky-glow-blur, 14px) var(--sticky-glow-spread, 4px) var(--glow-warm),
+    0 3px 8px rgba(30, 15, 5, 0.35);
+}
+
+.card.settling[data-kind="flower"] {
+  height: 40px;
+}
+
+/*
+ * Always-on replay ticker (js/messageTicker.js): cycles every submitted
+ * message, oldest first, so it can be read again any number of times -
+ * separate from the tree canopy above (Mishima spec, 2026-09-09). The card
+ * displays near the trunk base ("木の幹と根の間"), well below the lowest
+ * canopy anchor (js/branchAnchors.js CANOPY_POINTS tops out at y=66.7%) so it
+ * never competes with a real leaf for the same spot.
+ *
+ * `.ticker-card` is its own style (not `.card`): a GPT-5.5 review of the
+ * first cut flagged reusing `.card` here as fragile (it would inherit any
+ * future travel/settle-only changes), and Mishima separately asked for this
+ * replay card to read as visually distinct from a brand-new-message card
+ * anyway - the "これまでの投稿" pill below is that distinction, plus a
+ * cooler/quieter palette than `.card`'s warm amber.
+ *
+ * `.ticker-travel-leaf` (Mishima, 2026-09-09 follow-up: "葉っぱがついている
+ * 場所から飛び出てきてまたそこに戻っていく") lives directly in `.tree-frame`,
+ * not inside `.message-ticker`, because its `left`/`top` move between two
+ * points in that same %-coordinate space: the message's own real anchor on
+ * the tree (js/main.js reads `record.anchor`, the exact spot messageStore.js
+ * settled it at) and the fixed display point the card sits at. js/main.js
+ * drives left/top/opacity/transform directly (no CSS `[data-phase]` opacity
+ * rule) so the "jump to the start point instantly, then transition to the
+ * target" two-step (same pattern as `.card`'s own travel in spawnCard())
+ * can't race a CSS-driven target state. `data-phase` here only swaps the
+ * easing curve for the return trip. Reuses the exact `.sticky-visual` maple
+ * silhouette as its one child.
+ */
+.message-ticker {
+  position: absolute;
+  left: 50%;
+  top: 76%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.ticker-travel-leaf {
+  position: absolute;
+  width: 40px;
+  height: 38px;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.45);
+  /* opacity matches the 1s travel duration (not a quick 0.3s fade) so the
+     leaf stays visible for the whole trip instead of vanishing/appearing
+     within the first ~300ms of a much longer move (caught via
+     getComputedStyle sampling during manual verification, 2026-09-09). */
+  transition: left 1s ease-out, top 1s ease-out, transform 1s ease-out, opacity 1s ease-out;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.ticker-travel-leaf[data-phase="leaf-out"] {
+  transition-timing-function: ease-in;
+}
+
+.ticker-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 170px;
+  padding: 24px 14px 14px;
+  border-radius: 12px;
+  font-family: var(--font-message);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  text-align: center;
+  background: linear-gradient(160deg, rgba(250, 252, 246, 0.95), rgba(222, 238, 222, 0.85));
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  border: 1px solid rgba(92, 150, 112, 0.4);
+  box-shadow: 0 6px 18px rgba(20, 30, 15, 0.3);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.82);
+  transition: opacity var(--duration-stage) ease, transform var(--duration-stage) ease;
+}
+
+/* Content (not a real child node) so js/main.js's plain `textContent =` on
+   `.ticker-card` never has to preserve/re-insert a label element. */
+.ticker-card::before {
+  content: "これまでの投稿";
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  font-size: 10px;
+  color: rgba(45, 78, 62, 0.85);
+  background: rgba(230, 246, 235, 0.9);
+  border: 1px solid rgba(92, 150, 112, 0.35);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.message-ticker[data-phase="card"] .ticker-card {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 6, 20, 0.55);
+  z-index: 50;
+}
+
+.modal.open {
+  display: flex;
+}
+
+.modal-card {
+  position: relative;
+  max-width: 80vw;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 28px 32px;
+  border-radius: 20px;
+  font-family: var(--font-message);
+  font-size: 19px;
+  line-height: 1.8;
+  color: var(--ink);
+  white-space: pre-wrap;
+  background: linear-gradient(160deg, rgba(255, 246, 224, 0.92), rgba(255, 220, 170, 0.75));
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid var(--amber-border);
+  box-shadow: 0 12px 40px rgba(20, 8, 30, 0.45), 0 0 60px var(--glow-warm);
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  border: none;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: 20px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.modal-close:hover {
+  transform: scale(1.15);
+}
+
+.sheet-settings {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--amber-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--amber-border);
+  box-shadow: 0 4px 16px rgba(20, 8, 30, 0.25);
+  z-index: 40;
+}
+
+.sheet-url-input {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--amber-border);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  outline: none;
+}
+
+.sheet-url-save {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: none;
+  background: var(--horizon-gold);
+  color: #2a1a00;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.sheet-url-save:hover {
+  filter: brightness(1.08);
+}
+
+.sheet-status[data-online="true"] {
+  color: #2f6b2a;
+}
+
+.sheet-status[data-online="false"] {
+  color: #8a2a2a;
+}
+
+/* Dev-only manual message-count control (?debug=1), mirrors .sheet-settings. */
+.dev-panel[hidden] {
+  display: none;
+}
+
+.dev-panel {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--amber-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--amber-border);
+  box-shadow: 0 4px 16px rgba(20, 8, 30, 0.25);
+  z-index: 40;
+}
+
+.dev-count-input {
+  width: 80px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--amber-border);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  outline: none;
+}
+
+.dev-count-apply,
+.dev-count-reset {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: none;
+  background: var(--horizon-gold);
+  color: #2a1a00;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.dev-count-apply:hover,
+.dev-count-reset:hover {
+  filter: brightness(1.08);
+}

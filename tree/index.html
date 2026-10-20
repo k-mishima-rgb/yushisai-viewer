@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>成長する寄せ書きツリー</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body data-viewer="1">
+    <div class="app">
+      <div class="tree-stage-wrap">
+        <div class="tree-backdrop">
+          <img class="tree-bg backdrop-layer time-layer" data-time-layer="morning" src="assets/tree-morning.png" alt="" />
+          <img class="tree-bg backdrop-layer time-layer" data-time-layer="midday" src="assets/tree-midday.png" alt="" />
+          <img class="tree-bg backdrop-layer time-layer" data-time-layer="afternoon" src="assets/tree-afternoon.png" alt="" />
+          <img class="tree-bg backdrop-layer time-layer" data-time-layer="evening" src="assets/tree-evening.png" alt="" />
+        </div>
+        <div class="tree-frame">
+          <img class="tree-bg time-layer" data-time-layer="morning" src="assets/tree-morning.png" alt="" />
+          <img class="tree-bg time-layer" data-time-layer="midday" src="assets/tree-midday.png" alt="" />
+          <img class="tree-bg time-layer" data-time-layer="afternoon" src="assets/tree-afternoon.png" alt="" />
+          <img class="tree-bg time-layer" data-time-layer="evening" src="assets/tree-evening.png" alt="" />
+          <div class="sticky-layer"></div>
+          <div class="card-layer"></div>
+          <!-- Always-on replay ticker (js/messageTicker.js): cycles every submitted
+               message oldest-first so it can be read again, independent of the
+               tree canopy above. The leaf travels between its real anchor on
+               the tree and the fixed card position below (js/main.js), so it
+               lives directly in .tree-frame rather than inside .message-ticker. -->
+          <span class="ticker-travel-leaf" data-phase="idle" aria-hidden="true">
+            <span class="sticky-visual" data-variant="oval-a"></span>
+          </span>
+          <div class="message-ticker" data-phase="idle" aria-hidden="true">
+            <div class="ticker-card"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal">
+      <div class="modal-card">
+        <button type="button" class="modal-close" aria-label="閉じる">×</button>
+        <p class="modal-message"></p>
+      </div>
+    </div>
+
+    <script defer src="js/app.js"></script>
+  </body>
+</html>
